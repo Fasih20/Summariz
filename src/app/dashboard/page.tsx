@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function Dashboard() {
-  const { user, isSignedIn } = useUser();
+  const { user, isSignedIn } = useUser(); 
   const router = useRouter();
 
   const lectures = useQuery(api.lecture.getLecturesByEmail, {
