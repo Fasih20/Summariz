@@ -8,6 +8,8 @@
 //   stream?: MediaStream | null;
 //   autoTranscribe?: boolean;
 //   onSummaryUpdate?: (summary: string) => void;
+//   streamId?: string;
+//   mode: 'host' | 'viewer';
 // }
 
 // // interface SpeechRecognition extends EventTarget {
@@ -444,54 +446,114 @@
 //     </div>
 //   );
 // }
+
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { FaDownload, FaSpinner, FaMicrophone, FaTrash, FaFileWord } from 'react-icons/fa';
 import axios from 'axios';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
+import {io, Socket} from 'socket.io-client';
+
+// import { Socket } from 'dgram';
 
 interface TranscriptsProps {
   stream?: MediaStream | null;
   autoTranscribe?: boolean;
-  onTranscriptionUpdate?: (text: string) => void; // New prop for sending updates
-  isBroadcaster?: boolean; // New prop to identify if this is the teacher's component
-  transcription?: string;
+  onSummaryUpdate?: (summary: string) => void;
+  streamId?: string;
+  mode: 'host' | 'viewer';
 }
 
-export default function Transcripts({ 
-  stream, 
-  autoTranscribe = false, 
-  onTranscriptionUpdate,
-  // transcription,
-  isBroadcaster = false 
-}: TranscriptsProps) {
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: {
+      new (): SpeechRecognition;
+      prototype: SpeechRecognition;
+    };
+    webkitSpeechRecognition: {
+      new (): SpeechRecognition;
+      prototype: SpeechRecognition;
+    };
+  }
+}
+
+export default function Transcripts({ stream, autoTranscribe = false, onSummaryUpdate, streamId, mode }: TranscriptsProps) {
   const [transcription, setTranscription] = useState('');
   const [notes, setNotes] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const recognitionRef = useRef<any>(null);
+
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(false);
   const manuallyStoppedRef = useRef(false);
+  const socketRef = useRef<Socket | null>(null);
 
-  // Auto-scroll to bottom when new transcription comes in
   useEffect(() => {
-    if (transcriptContainerRef.current) {
-      transcriptContainerRef.current.scrollTop = transcriptContainerRef.current.scrollHeight;
-    }
-  }, [transcription]);
+    if (!streamId) return;
 
-  // Initialize speech recognition
+    socketRef.current = io(process.env.NEXT_PUBLIC_SOCKET_SERVER || '', {
+      transports: ['websocket']
+    });
+    if (socketRef.current) {
+      socketRef.current.emit('joinStream', streamId);
+    }
+
+    if (mode === 'viewer' && socketRef.current) {
+      socketRef.current.on('transcription', (text: string) => {
+        setTranscription(prev => prev + text + '\n');
+      });
+    }
+
+    return () => {
+      socketRef.current?.disconnect();
+    };
+  }, [streamId, mode]);
+
   useEffect(() => {
     isMountedRef.current = true;
-    
-    if (!isBroadcaster) return; // Only teachers should transcribe
 
-    const SpeechRecognition = (window as any).SpeechRecognition || 
-                            (window as any).webkitSpeechRecognition;
+    if (typeof window === 'undefined' || mode !== 'host') return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setError('Web Speech API not supported in your browser');
       return;
@@ -503,37 +565,29 @@ export default function Transcripts({
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       if (!isMountedRef.current) return;
-      
-      let interimTranscript = '';
+
       let finalTranscript = '';
-      
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        const transcript = result[0].transcript;
-        
         if (result.isFinal) {
-          finalTranscript += transcript + '\n';
-        } else {
-          interimTranscript += transcript;
+          finalTranscript += result[0].transcript + '\n';
         }
       }
-      
-      // Update local state
-      setTranscription(prev => prev + finalTranscript);
-      
-      // Send updates to parent component (broadcast page)
-      if (finalTranscript && onTranscriptionUpdate) {
-        onTranscriptionUpdate(finalTranscript);
+
+      if (finalTranscript.trim()) {
+        setTranscription(prev => prev + finalTranscript);
+        if (socketRef.current && streamId) {
+          socketRef.current.emit('transcription', { streamId, text: finalTranscript });
+        }
       }
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (!isMountedRef.current) return;
-      
+
       console.error('Speech recognition error:', event.error);
-      
       if (event.error !== 'aborted') {
         setIsListening(false);
         setError(`Speech recognition error: ${event.error}`);
@@ -542,7 +596,6 @@ export default function Transcripts({
 
     recognition.onend = () => {
       if (!isMountedRef.current) return;
-      
       if (autoTranscribe && !manuallyStoppedRef.current) {
         setTimeout(() => {
           if (isMountedRef.current && recognitionRef.current && !manuallyStoppedRef.current && autoTranscribe) {
@@ -560,15 +613,15 @@ export default function Transcripts({
         recognitionRef.current.abort();
       }
     };
-  }, [autoTranscribe, isBroadcaster, onTranscriptionUpdate]);
+  }, [autoTranscribe, streamId, mode]);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current || !isBroadcaster) return;
+    if (!recognitionRef.current) return;
     manuallyStoppedRef.current = false;
     try {
       recognitionRef.current.stop();
       setTimeout(() => {
-        if (isMountedRef.current && recognitionRef.current && !manuallyStoppedRef.current) {
+        if (isMountedRef.current && recognitionRef.current && !manuallyStoppedRef.current && autoTranscribe && !isListening) {
           recognitionRef.current.start();
           setIsListening(true);
           setError(null);
@@ -579,7 +632,7 @@ export default function Transcripts({
       setIsListening(false);
       setError('Failed to start microphone');
     }
-  }, [isBroadcaster]);
+  }, [autoTranscribe, isListening]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
@@ -590,16 +643,15 @@ export default function Transcripts({
   }, []);
 
   useEffect(() => {
-    if (!isBroadcaster) return; // Only teachers should handle stream transcription
-    
-    if (autoTranscribe && stream) {
+    if (autoTranscribe && stream && mode === 'host') {
       manuallyStoppedRef.current = false;
       startListening();
-    } else if (!autoTranscribe && isListening) {
+    } else if ((!autoTranscribe || mode !== 'host') && isListening) {
       stopListening();
     }
-  }, [autoTranscribe, stream, isListening, startListening, stopListening, isBroadcaster]);
+  }, [autoTranscribe, stream, isListening, startListening, stopListening, mode]);
 
+  // The rest of the code remains unchanged: generateNotes, downloads, UI rendering...
   const generateNotes = useCallback(async (text: string) => {
     if (!text.trim() || isGeneratingNotes) return;
     setIsGeneratingNotes(true);
@@ -629,6 +681,7 @@ export default function Transcripts({
       const summary = response.data?.choices?.[0]?.message?.content;
       if (summary) {
         setNotes(summary);
+        onSummaryUpdate?.(summary);
       }
     } catch (error) {
       console.error('Notes generation failed:', error);
@@ -636,7 +689,7 @@ export default function Transcripts({
     } finally {
       setIsGeneratingNotes(false);
     }
-  }, [isGeneratingNotes]);
+  }, [isGeneratingNotes, onSummaryUpdate]);
 
   const downloadTxt = useCallback(() => {
     if (!notes) return;
@@ -646,7 +699,7 @@ export default function Transcripts({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `lecture-notes-${new Date().toISOString().slice(0, 10)}.txt`;
+      a.download = `conversation-notes-${new Date().toISOString().slice(0, 10)}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -666,9 +719,9 @@ export default function Transcripts({
       const doc = new Document({
         sections: [{
           children: [
-            new Paragraph({ children: [new TextRun({ text: 'Lecture Summary', bold: true, size: 28 })] }),
+            new Paragraph({ children: [new TextRun({ text: 'Conversation Summary', bold: true, size: 28 })] }),
             new Paragraph({ children: [new TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 22, color: '555555' })] }),
-            new Paragraph({ children: [new TextRun("")] }),
+            new Paragraph({ children: [new TextRun("")] }), // Empty line
             new Paragraph({ children: [new TextRun({ text: notes, size: 24 })] }),
           ],
         }],
@@ -678,7 +731,7 @@ export default function Transcripts({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `lecture-summary-${new Date().toISOString().slice(0, 10)}.docx`;
+      a.download = `conversation-summary-${new Date().toISOString().slice(0, 10)}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -698,26 +751,6 @@ export default function Transcripts({
     if (isListening) stopListening();
   }, [isListening, stopListening]);
 
-  if (!isBroadcaster) {
-    // For viewers, just show the transcription they receive
-    return (
-      <div className="bg-gray-800 p-4 rounded-lg text-white shadow-lg">
-        <h2 className="text-xl font-semibold mb-2">Lecture Transcription</h2>
-        <div 
-          ref={transcriptContainerRef}
-          className="bg-gray-700 p-4 rounded-md h-64 overflow-y-auto"
-        >
-          {transcription ? (
-            <div className="whitespace-pre-wrap">{transcription}</div>
-          ) : (
-            <p className="text-gray-400 italic">Waiting for transcription...</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // For teachers/broadcasters, show the full component with controls
   return (
     <div className="bg-gray-800 p-4 rounded-lg text-white shadow-lg space-y-4">
       <div className="flex justify-between items-center">
@@ -760,7 +793,7 @@ export default function Transcripts({
         <button
           onClick={isListening ? stopListening : startListening}
           disabled={error?.includes('not supported')}
-          className={`flex-1 min-w-[120px] px-4 py-2 rounded-md ${
+          className={`flex-1 min-w-[120px] px-4 py-2 rounded-md flex items-center justify-center gap-2 ${
             isListening ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
           } disabled:bg-gray-600 disabled:opacity-50`}
         >
@@ -835,3 +868,4 @@ export default function Transcripts({
     </div>
   );
 }
+
