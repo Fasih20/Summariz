@@ -41,8 +41,8 @@ export default function Viewer() {
         });
 
         const peer = new Peer({
-          host: process.env.NEXT_PUBLIC_PEER_HOST || window.location.hostname,
-          port: Number(process.env.NEXT_PUBLIC_PEER_PORT || 9000),
+          host: process.env.NEXT_PUBLIC_PEER_HOST,
+          port: Number(process.env.NEXT_PUBLIC_PEER_PORT),
           path: '/peer',
           secure: true,
           debug: 3,

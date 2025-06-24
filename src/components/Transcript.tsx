@@ -530,7 +530,7 @@ export default function Transcripts({ stream, autoTranscribe = false, onSummaryU
   useEffect(() => {
     if (!streamId) return;
 
-    socketRef.current = io(process.env.NEXT_PUBLIC_SOCKET_SERVER || '', {
+    socketRef.current = io(process.env.NEXT_PUBLIC_SOCKET_SERVER!, {
       transports: ['websocket']
     });
     if (socketRef.current) {
