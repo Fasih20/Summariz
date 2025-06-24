@@ -41,8 +41,8 @@ export default function Viewer() {
         });
 
         const peer = new Peer({
-          host: process.env.NEXT_PUBLIC_PEER_HOST,
-          port: Number(process.env.NEXT_PUBLIC_PEER_PORT),
+          host: process.env.NEXT_PUBLIC_PEER_HOST || window.location.hostname,
+          port: Number(process.env.NEXT_PUBLIC_PEER_PORT || 9000),
           path: '/peer',
           secure: true,
           debug: 3,
@@ -202,8 +202,6 @@ export default function Viewer() {
         <Transcripts 
           stream={videoRef.current?.srcObject as MediaStream || null} 
           autoTranscribe={true}
-          streamId={streamId as string}
-          mode="viewer"
         />
 
         <div className="text-center text-sm text-gray-400 mt-4">

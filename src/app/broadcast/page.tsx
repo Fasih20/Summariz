@@ -316,8 +316,6 @@ export default function Broadcast() {
           stream={videoRef.current?.srcObject as MediaStream || null} 
           autoTranscribe={true}
           onSummaryUpdate={(summary: string) => setNotes(summary)}
-          streamId={streamInfo.streamId}
-          mode="host"
         />
 
         <div className="bg-gray-900 p-4 rounded-lg">
