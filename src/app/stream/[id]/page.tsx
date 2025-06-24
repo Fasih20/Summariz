@@ -44,7 +44,7 @@ export default function Viewer() {
           host: process.env.NEXT_PUBLIC_PEER_HOST || window.location.hostname,
           port: Number(process.env.NEXT_PUBLIC_PEER_PORT || 9000),
           path: '/peer',
-          secure: process.env.NODE_ENV === 'production',
+          secure: true,
           debug: 3,
           config: {
             iceServers: [
