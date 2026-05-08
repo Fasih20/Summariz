@@ -1,0 +1,28 @@
+project:
+  name: Summariz
+  slug: summariz
+ai:
+  tone: friendly
+  audience: mixed
+  languages:
+    - en
+changelog:
+  categories:
+    - feature
+    - fix
+    - improvement
+    - breaking
+  version_scheme: semver
+  auto_publish: false
+  public_page: true
+bot:
+  commit_branch: main
+  squash_commits: true
+  commit_author: RepoMind Bot
+  commit_email: bot@repomind.dev
+tickets:
+  id_format: T-{n}
+  epic_format: EPIC-{n}
+  default_status: todo
+integrations:
+  email_notifications: true
