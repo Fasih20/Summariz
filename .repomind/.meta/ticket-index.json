@@ -1,5 +1,17 @@
 {
-  "tickets": [],
+  "tickets": [
+    {
+      "id": "T-1",
+      "path": ".repomind/tickets/T-1-fix-web-rtc-issue.md",
+      "title": "Fix web RTC issue",
+      "status": "backlog",
+      "priority": "medium",
+      "complexity": "M",
+      "updated_at": "2026-05-08T01:23:35.500Z"
+    }
+  ],
   "adrs": [],
-  "updated_at": "2026-05-08T01:03:30.140Z"
+  "last_commit": "6cfa611531b1116f028e5b5ae00d18fad0ef5a85",
+  "updated_at": "2026-05-08T01:23:38.785Z",
+  "checksum": "10c6cefbce0d023b75566c43855998081293a927bf2f0fa2a5b51df71cd4feac"
 }
